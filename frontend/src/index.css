@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0D0D0D;
+  --bg-card: #141414;
+  --bg-surface: #1F1F1F;
+  --bg-input: #000000;
+  --text-primary: #FFFFFF;
+  --text-secondary: #A3A3A3;
+  --text-muted: #737373;
+  --border-color: #000000;
+  --border-subtle: #2A2A2A;
+  --accent-green: #00FF66;
+  --table-hover: #1E1E1E;
+  --table-header: #000000;
+  --table-alt: #181818;
+  --navbar-bg: #000000;
+  --navbar-text: #FFFFFF;
+}
+
+.light-theme {
+  --bg-primary: #F4F4F0;
+  --bg-card: #FFFFFF;
+  --bg-surface: #EAEAE4;
+  --bg-input: #FFFFFF;
+  --text-primary: #0A0A0A;
+  --text-secondary: #4A4A4A;
+  --text-muted: #7A7A7A;
+  --border-color: #000000;
+  --border-subtle: #D8D8D2;
+  --accent-green: #00FF66;
+  --table-hover: #F0F0EA;
+  --table-header: #EAEAE4;
+  --table-alt: #F9F9F6;
+  --navbar-bg: #FFFFFF;
+  --navbar-text: #000000;
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    @apply font-sans antialiased selection:bg-[#00FF66] selection:text-black;
+    overflow-x: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Custom Neo-Brutalist Utility Classes */
+.neo-box {
+  background-color: var(--bg-card);
+  border: 3px solid var(--border-color);
+  box-shadow: 4px 4px 0px #000000;
+  transition: all 0.2s ease;
+}
+
+.neo-box-light {
+  background-color: #FFFFFF;
+  color: #000000;
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+}
+
+.neo-box-green {
+  background-color: #00FF66;
+  color: #000000;
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+}
+
+.neo-btn {
+  @apply font-mono uppercase tracking-wider font-bold px-4 py-2 border-3 border-black shadow-brutal active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer inline-flex items-center justify-center gap-2 select-none;
+}
+
+.neo-btn-green {
+  @apply neo-btn bg-[#00FF66] text-black hover:bg-[#33ff85];
+}
+
+.neo-btn-white {
+  @apply neo-btn bg-white text-black hover:bg-neutral-200;
+}
+
+.neo-btn-red {
+  @apply neo-btn bg-[#FF3366] text-white hover:bg-[#ff4d79];
+}
+
+.neo-btn-yellow {
+  @apply neo-btn bg-[#FFE600] text-black hover:bg-[#fff033];
+}
+
+.neo-btn-dark {
+  @apply neo-btn;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: #000000;
+}
+.neo-btn-dark:hover {
+  background-color: var(--bg-card);
+}
+
+.neo-input {
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  @apply font-mono focus:border-[#00FF66] focus:outline-none px-4 py-3 transition-all;
+}
+
+/* Neo-Brutalist Diagonal Stripes Background Pattern */
+.bg-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 255, 102, 0.04),
+    rgba(0, 255, 102, 0.04) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+}
+
+.bg-hazard {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    #FFE600,
+    #FFE600 15px,
+    #000000 15px,
+    #000000 30px
+  );
+}
+
+/* Neo Brutalist Chunky Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+  border-left: 2px solid #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00FF66;
+  border: 2px solid #000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #33ff85;
+}

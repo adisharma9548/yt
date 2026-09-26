@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.pytest_cache/
+*.log
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Temporary download files
+.temp/
+downloads/
+scratch/
+.system_generated/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
