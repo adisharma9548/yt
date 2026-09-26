@@ -93,6 +93,12 @@ class DownloadWorker:
                         status_update_cb(item)
                     return True
 
+                # yt-dlp may return normally even when no usable output file was
+                # produced. Treat that as a failed attempt; otherwise this loop
+                # retries forever without incrementing retry_count and the queue
+                # never advances to the next video.
+                raise RuntimeError("Download finished without producing an output file")
+
             except DownloadCancelledException:
                 logger.info(f"Download of '{item.title}' was cancelled mid-stream.")
                 item.status = DownloadStatus.CANCELLED
