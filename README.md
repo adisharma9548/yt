@@ -46,34 +46,35 @@
 
 ```mermaid
 flowchart TD
-    subgraph Frontend ["Frontend (React 19 + TypeScript + Vite)"]
-        UI["Neo-Brutalist UI & Wizard Flow"]
-        WSClient["WebSocket Client (useWebSocket)"]
-        VirtualTable["@tanstack/react-virtual Table"]
+    subgraph FE[Frontend: React 19 + TypeScript]
+        UI[Neo-Brutalist Wizard UI]
+        VTable[Virtualized Video Table]
+        WSC[WebSocket Client]
     end
 
-    subgraph Backend ["Backend (FastAPI + Python 3.11+)"]
-        API["REST API Router (/api/*)"]
-        WS["WebSocket Server (/ws)"]
-        QM["Queue Manager (Sequential Runner)"]
-        PT["Progress Tracker (Throttled Broadcasts)"]
+    subgraph BE[Backend: FastAPI + Python]
+        API[REST API Endpoints]
+        QM[Sequential Queue Manager]
+        PT[Throttled Progress Tracker]
+        WS[WebSocket Broadcast Server]
     end
 
-    subgraph Engine ["Download & Media Engine"]
-        YTDL["yt-dlp Python Library"]
-        FFMPEG["FFmpeg Subprocess Remuxer (-c:v copy -c:a aac)"]
-        WIN32["Windows Explorer & Native Shell Integration"]
+    subgraph DL[Download & Media Pipeline]
+        YTDL[yt-dlp Engine]
+        FFMPEG[FFmpeg Remuxer]
+        STORAGE[(Local Disk Storage)]
     end
 
-    UI -->|"HTTP REST"| API
-    UI <-->|"Live 500ms Updates"| WS
-    API --> QM
-    QM --> PT
-    PT --> WS
-    QM --> YTDL
-    YTDL --> FFMPEG
-    FFMPEG --> WIN32
-    WIN32 -->|"Final Output"| FS[("Local Disk (e.g. C:\\Users\\...\\Downloads)")]
+    UI -->|1. Submit URL & Config| API
+    API -->|2. Enqueue Items| QM
+    QM -->|3. Extract & Download Streams| YTDL
+    YTDL -->|4. Lossless AAC Remux| FFMPEG
+    FFMPEG -->|5. Save Output File| STORAGE
+
+    QM -.->|Status Updates| PT
+    PT -.->|Throttle 500ms| WS
+    WS -.->|Push Notifications| WSC
+    WSC -.->|Update Progress State| UI
 ```
 
 ---
