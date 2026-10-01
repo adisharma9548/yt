@@ -25,8 +25,8 @@ export const UrlInputPage: React.FC<UrlInputPageProps> = ({
       return;
     }
 
-    // Client-side domain check
-    const isYt = /^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtu\.be)\/.+$/i.test(trimmed);
+    // Client-side domain check (supports youtube.com, youtu.be, and subdomains like music, m, www, gaming)
+    const isYt = /^(https?:\/\/)?([a-zA-Z0-9_-]+\.)?(youtube\.com|youtu\.be)\/.+$/i.test(trimmed);
     if (!isYt) {
       setLocalError('URL must belong to youtube.com or youtu.be domain.');
       return;

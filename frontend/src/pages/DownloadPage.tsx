@@ -28,8 +28,12 @@ export const DownloadPage: React.FC<DownloadPageProps> = ({
   const isPaused = queueStatus.overall_status === 'paused';
   const isComplete =
     queueStatus.overall_status === 'completed' ||
+    queueStatus.overall_status === 'cancelled' ||
     (queueStatus.summary.total_requested > 0 &&
-      queueStatus.summary.completed + queueStatus.summary.skipped + queueStatus.summary.failed >=
+      queueStatus.summary.completed +
+        queueStatus.summary.skipped +
+        queueStatus.summary.failed +
+        ((queueStatus.summary as { cancelled?: number }).cancelled ?? 0) >=
         queueStatus.summary.total_requested);
 
   return (

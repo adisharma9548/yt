@@ -71,6 +71,7 @@ export const VideoTable: React.FC<VideoTableProps> = ({
             // Compute estimated size for this video under current selected quality
             const sizeMb =
               video.quality_sizes?.[selectedQuality] ||
+              (selectedQuality === 'Best Available' ? video.quality_sizes?.['best'] : undefined) ||
               video.quality_sizes?.['1080p'] ||
               video.quality_sizes?.['720p'] ||
               video.estimated_size_mb ||

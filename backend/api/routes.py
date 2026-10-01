@@ -28,13 +28,16 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health", response_model=HealthResponse)
 def health_check():
-    """Returns system status, FFmpeg installation, and version."""
+    """Returns system status, FFmpeg installation, version, and default download directory info."""
     ff_info = ffmpeg_service.get_version_info()
+    val = validate_download_directory(str(DEFAULT_DOWNLOAD_DIR))
     return HealthResponse(
         status="ok",
         ffmpeg_installed=ff_info["installed"],
         ffmpeg_version=ff_info["version"],
-        version="1.0.0"
+        version="1.0.0",
+        default_download_dir=val["path"] if val["valid"] else str(DEFAULT_DOWNLOAD_DIR),
+        free_space_mb=val["free_space_mb"] if val["valid"] else 0
     )
 
 

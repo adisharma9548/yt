@@ -151,7 +151,7 @@ class YouTubeService:
             "quality_sizes": sizes,
             "estimated_size_mb": default_size,
             "thumbnail_url": thumbnail,
-            "url": f"https://www.youtube.com/watch?v=f{video_id}" if video_id else url
+            "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else url
         }
 
         return {
@@ -174,9 +174,8 @@ class YouTubeService:
         processed_videos = []
         standard_qualities = ["2160p", "1440p", "1080p", "720p", "480p", "360p"]
 
-        for idx, entry in enumerate(entries, start=1):
-            if not entry:
-                continue
+        valid_entries = [e for e in entries if e]
+        for idx, entry in enumerate(valid_entries, start=1):
             video_id = entry.get("id", "")
             title = entry.get("title", f"Video {idx}")
             duration = entry.get("duration") or 0
@@ -197,6 +196,7 @@ class YouTubeService:
                 "480p": duration_min * 6,
                 "360p": duration_min * 4,
                 "best": duration_min * 20,
+                "Best Available": duration_min * 20,
             }
 
             if "formats" in entry:
@@ -269,6 +269,7 @@ class YouTubeService:
             sizes = {"1080p": 50, "720p": 25, "480p": 15, "360p": 10}
 
         sizes["best"] = sizes.get(qualities[0], 50)
+        sizes["Best Available"] = sizes["best"]
         return qualities, sizes
 
     @staticmethod

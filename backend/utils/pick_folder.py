@@ -4,15 +4,18 @@ import subprocess
 from pathlib import Path
 
 
-def pick_folder_powershell(title: str, initialdir: str) -> str:
+def pick_folder_powershell(title: str, initialdir: str) -> tuple[bool, str]:
     """
     Invokes the modern Windows 11 IFileOpenDialog via open_folder_dialog.ps1.
     Matches the native Windows File Explorer dialog with navigation pane,
     breadcrumbs, and New Folder button.
+    Returns (success, path).
+    success is True if PowerShell ran properly (path may be empty if user cancelled).
+    success is False if PowerShell failed to execute or errored.
     """
     ps1_path = Path(__file__).resolve().parent / "open_folder_dialog.ps1"
     if not ps1_path.exists():
-        return ""
+        return False, ""
 
     init_dir = initialdir if initialdir and Path(initialdir).exists() else str(Path.home() / "Downloads")
     init_dir = str(Path(init_dir).resolve()).rstrip("\\")
@@ -37,13 +40,18 @@ def pick_folder_powershell(title: str, initialdir: str) -> str:
             errors="replace",
             timeout=120
         )
+        if proc.returncode != 0:
+            sys.stderr.write(f"PowerShell picker returned code {proc.returncode}: {proc.stderr}\n")
+            return False, ""
+
         out = proc.stdout.strip()
         if out and Path(out).exists():
-            return out
-        return ""
+            return True, out
+        # User cancelled
+        return True, ""
     except Exception as e:
         sys.stderr.write(f"PowerShell picker error: {e}\n")
-        return ""
+        return False, ""
 
 
 def pick_folder_tkinter(title: str, initialdir: str) -> str:
@@ -72,10 +80,10 @@ if __name__ == "__main__":
     init_path = sys.argv[2] if len(sys.argv) > 2 else str(Path.home() / "Downloads")
 
     # 1. Primary: Modern Windows 11 Explorer dialog via PowerShell (-Sta, interactive)
-    result = pick_folder_powershell(dialog_title, init_path)
+    ps_success, result = pick_folder_powershell(dialog_title, init_path)
 
-    # 2. Fallback: Tkinter if PowerShell is restricted or failed to return
-    if not result:
+    # 2. Fallback: Tkinter ONLY if PowerShell failed to execute
+    if not ps_success:
         result = pick_folder_tkinter(dialog_title, init_path)
 
     # Print selected path to stdout for caller

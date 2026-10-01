@@ -15,7 +15,7 @@ YOUTUBE_DOMAINS = {
 
 # Regex patterns for video IDs and playlist IDs
 VIDEO_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{11}$")
-PLAYLIST_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{12,}$")
+PLAYLIST_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{2,}$")
 
 
 def is_youtube_url(url: str) -> bool:
@@ -64,6 +64,12 @@ def extract_video_id(url: str) -> Optional[str]:
 
         # Case 4: youtube.com/embed/VIDEO_ID or /v/VIDEO_ID
         if path.startswith("/embed/") or path.startswith("/v/"):
+            parts = path.strip("/").split("/")
+            if len(parts) >= 2 and VIDEO_ID_REGEX.match(parts[1]):
+                return parts[1]
+
+        # Case 5: youtube.com/live/VIDEO_ID
+        if path.startswith("/live/"):
             parts = path.strip("/").split("/")
             if len(parts) >= 2 and VIDEO_ID_REGEX.match(parts[1]):
                 return parts[1]

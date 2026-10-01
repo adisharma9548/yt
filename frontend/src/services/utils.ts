@@ -96,6 +96,14 @@ export function parseSelectionClient(input: string, maxVideos: number): { indice
   return { indices: Array.from(selectedSet).sort((a, b) => a - b) };
 }
 
+export function sanitizeFilenameClient(name: string): string {
+  if (!name) return 'video';
+  // Strip Windows invalid characters \ / : * ? " < > | and control chars
+  let cleaned = name.replace(/[\\/:*?"<>|]/g, ' ').replace(/[\x00-\x1f\x7f]/g, '');
+  cleaned = cleaned.replace(/\s+/g, ' ').replace(/^[. ]+|[. ]+$/g, '');
+  return cleaned || 'video';
+}
+
 export function generateFilenamePreview(
   title: string,
   index: number,
@@ -103,8 +111,9 @@ export function generateFilenamePreview(
   customTemplate?: string
 ): string {
   const padIndex = index.toString().padStart(3, '0');
+  const cleanTitle = sanitizeFilenameClient(title);
   if (mode === 'title_only') {
-    return `${title}.mp4`;
+    return `${cleanTitle}.mp4`;
   }
   if (mode === 'index_only') {
     return `${padIndex}.mp4`;
@@ -112,9 +121,11 @@ export function generateFilenamePreview(
   if (mode === 'custom' && customTemplate) {
     let res = customTemplate.replace(/%\(playlist_index\)03d/g, padIndex);
     res = res.replace(/%\(playlist_index\)d/g, index.toString());
-    res = res.replace(/%\(title\)s/g, title);
+    res = res.replace(/%\(title\)s/g, cleanTitle);
     res = res.replace(/%\(ext\)s/g, 'mp4');
-    return res.endsWith('.mp4') ? res : `${res}.mp4`;
+    const withExt = res.endsWith('.mp4') ? res : `${res}.mp4`;
+    const stem = withExt.slice(0, -4);
+    return `${sanitizeFilenameClient(stem)}.mp4`;
   }
-  return `${padIndex} - ${title}.mp4`;
+  return `${padIndex} - ${cleanTitle}.mp4`;
 }

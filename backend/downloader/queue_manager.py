@@ -10,6 +10,7 @@ from ..models.enums import DownloadStatus, ExistingFilePolicy
 from .progress_tracker import ProgressTracker
 from .download_worker import DownloadWorker
 from ..utils.logger import logger
+from ..utils.filename_sanitizer import sanitize_filename, generate_filename
 from ..config import QUEUE_STATE_FILE
 
 
@@ -50,18 +51,27 @@ class QueueManager:
                 pass
 
     def add_item(self, item_data: Dict[str, Any]) -> QueueItem:
-        """Adds a single item to the queue."""
+        """Adds a single item to the queue with sanitized filename."""
         with self._lock:
             item_id = item_data.get("id") or f"video_{uuid.uuid4().hex[:6]}"
+            title = item_data.get("title", "Untitled")
+            playlist_index = item_data.get("index") or item_data.get("playlist_index", len(self.items) + 1)
+            video_id = item_data.get("video_id", "")
+            raw_filename = item_data.get("filename", "")
+            if raw_filename:
+                safe_filename = sanitize_filename(raw_filename, fallback_id=f"{playlist_index:03d}_{video_id}")
+            else:
+                safe_filename = generate_filename(title, playlist_index, video_id)
+
             item = QueueItem(
                 id=item_id,
-                playlist_index=item_data.get("index") or item_data.get("playlist_index", len(self.items) + 1),
-                video_id=item_data.get("video_id", ""),
-                title=item_data.get("title", "Untitled"),
-                url=item_data.get("url") or f"https://www.youtube.com/watch?v={item_data.get('video_id', '')}",
+                playlist_index=playlist_index,
+                video_id=video_id,
+                title=title,
+                url=item_data.get("url") or f"https://www.youtube.com/watch?v={video_id}",
                 status=DownloadStatus.WAITING,
                 quality=item_data.get("quality", "best"),
-                filename=item_data.get("filename", ""),
+                filename=safe_filename,
                 download_folder=item_data.get("download_folder", self.download_folder),
             )
             self.items.append(item)
@@ -75,9 +85,10 @@ class QueueManager:
     ) -> str:
         """Initializes and begins downloading queue items sequentially."""
         with self._lock:
-            # If already running, cancel previous
+            # If already running, cancel previous and wait for thread to terminate
             if self.worker_thread and self.worker_thread.is_alive():
                 self.cancel_all()
+                self.worker_thread.join(timeout=3.0)
 
             self.queue_id = f"q_{uuid.uuid4().hex[:8]}"
             self.items = []
@@ -132,8 +143,22 @@ class QueueManager:
         """Cancels the currently downloading item only."""
         with self._lock:
             self.cancel_current_event.set()
+            # If the queue is paused, un-pause so the worker can notice the skip and
+            # move on to the next video instead of staying stuck.
+            if self.overall_status == "paused":
+                self.pause_event.set()
+                self.overall_status = "downloading"
             current_item = self.get_current_item()
-            cancelled_id = current_item.id if current_item else None
+            if current_item:
+                cancelled_id = current_item.id
+            else:
+                # If no item is currently in DOWNLOADING status, cancel the next WAITING item
+                cancelled_id = None
+                for item in self.items:
+                    if item.status == DownloadStatus.WAITING:
+                        item.status = DownloadStatus.CANCELLED
+                        cancelled_id = item.id
+                        break
 
             # Find next item
             next_item = None
@@ -168,6 +193,10 @@ class QueueManager:
     def retry_failed(self) -> str:
         """Restarts queue for failed items only, preserving completed and skipped."""
         with self._lock:
+            if self.worker_thread and self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=2.0)
+                if self.worker_thread.is_alive():
+                    return self.queue_id  # already running; avoid two workers on one queue
             failed_items = [item for item in self.items if item.status == DownloadStatus.FAILED]
             if not failed_items:
                 return self.queue_id
@@ -203,7 +232,13 @@ class QueueManager:
                     continue
 
                 self.current_index = idx + 1
+                # Clear any stale skip request before starting this video
                 self.cancel_current_event.clear()
+                # Respect pause between videos
+                while not self.pause_event.is_set() and not self.cancel_all_event.is_set():
+                    time.sleep(0.3)
+                if self.cancel_all_event.is_set():
+                    break
 
                 worker = DownloadWorker(
                     progress_tracker=self.progress_tracker,
@@ -364,6 +399,15 @@ class QueueManager:
                 self.existing_file_policy = ExistingFilePolicy.SKIP
 
             self.items = [QueueItem.from_dict(item_dict) for item_dict in data.get("items", [])]
+
+            # If persisted state was actively downloading when the server shut down or crashed,
+            # reset overall status to paused and any in-progress item back to waiting.
+            if self.overall_status == "downloading":
+                self.overall_status = "paused"
+                for item in self.items:
+                    if item.status == DownloadStatus.DOWNLOADING:
+                        item.status = DownloadStatus.WAITING
+
             logger.info(f"Loaded persisted queue state: {len(self.items)} items.")
         except Exception as e:
             logger.error(f"Failed to load queue state: {e}")

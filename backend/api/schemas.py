@@ -80,3 +80,5 @@ class HealthResponse(BaseModel):
     ffmpeg_installed: bool
     ffmpeg_version: str
     version: str
+    default_download_dir: Optional[str] = None
+    free_space_mb: Optional[int] = None

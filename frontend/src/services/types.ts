@@ -102,4 +102,6 @@ export interface HealthResponse {
   ffmpeg_installed: boolean;
   ffmpeg_version: string;
   version: string;
+  default_download_dir?: string;
+  free_space_mb?: number;
 }

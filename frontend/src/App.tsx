@@ -49,7 +49,7 @@ export const App: React.FC = () => {
 
   // Configuration Settings
   const [selectedQuality, setSelectedQuality] = useState<string>('Best Available');
-  const [downloadFolder, setDownloadFolder] = useState<string>('C:\\Users\\adish\\Downloads');
+  const [downloadFolder, setDownloadFolder] = useState<string>('');
   const [freeSpaceMb, setFreeSpaceMb] = useState<number>(500000);
   const [namingMode, setNamingMode] = useState<'index_title' | 'title_only' | 'index_only' | 'custom'>('index_title');
   const [customTemplate, setCustomTemplate] = useState<string>('%(playlist_index)03d - %(title)s.%(ext)s');
@@ -90,6 +90,12 @@ export const App: React.FC = () => {
       try {
         const h = await api.getHealth();
         setHealth(h);
+        if (h.default_download_dir) {
+          setDownloadFolder(h.default_download_dir);
+        }
+        if (typeof h.free_space_mb === 'number') {
+          setFreeSpaceMb(h.free_space_mb);
+        }
       } catch (err) {
         console.error('Backend health check error:', err);
       }
@@ -146,9 +152,14 @@ export const App: React.FC = () => {
   // Polling fallback during download step
   useEffect(() => {
     if (currentStep === 4) {
+      let pollInFlight = false;
+      let disposed = false;
       const pollInterval = window.setInterval(async () => {
+        if (pollInFlight || disposed) return;
+        pollInFlight = true;
         try {
           const status = await api.getDownloadStatus();
+          if (disposed) return;
           setQueueStatus(status);
           const allItemsFinished =
             status.queue_items.length > 0 &&
@@ -163,7 +174,9 @@ export const App: React.FC = () => {
             setCurrentStep(5);
           }
         } catch {
-          // Ignore transient errors
+          // Ignore transient errors; WebSocket remains the primary update channel.
+        } finally {
+          pollInFlight = false;
         }
       }, 1000);
 
@@ -173,6 +186,7 @@ export const App: React.FC = () => {
       }, 1000);
 
       return () => {
+        disposed = true;
         clearInterval(pollInterval);
         clearInterval(timerRef.current);
       };
@@ -320,6 +334,7 @@ export const App: React.FC = () => {
     .reduce((acc, v) => {
       const size =
         v.quality_sizes?.[selectedQuality] ||
+        (selectedQuality === 'Best Available' ? v.quality_sizes?.['best'] : undefined) ||
         v.quality_sizes?.['1080p'] ||
         v.quality_sizes?.['720p'] ||
         v.estimated_size_mb ||

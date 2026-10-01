@@ -12,6 +12,7 @@ from ..services.ffmpeg_service import ffmpeg_service
 from ..services.filesystem_service import validate_download_directory
 from ..downloader.progress_tracker import ProgressTracker
 from ..utils.logger import logger
+from ..utils.filename_sanitizer import sanitize_filename, generate_filename
 from ..config import RETRY_BACKOFF_SECONDS, FFMPEG_PATH
 
 
@@ -30,7 +31,10 @@ class DownloadWorker:
         self.progress_tracker = progress_tracker
         self.pause_event = pause_event or threading.Event()
         self.cancel_event = cancel_event or threading.Event()
-        self.pause_event.set()  # Default not paused (set = running)
+        # Only default to "running" when no shared pause event was provided.
+        # Previously this un-paused the whole queue every time a new video started.
+        if pause_event is None:
+            self.pause_event.set()
 
     def download_item(
         self,
@@ -44,6 +48,13 @@ class DownloadWorker:
         """
         dest_dir = Path(item.download_folder).resolve()
         dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Ensure filename is safe for Windows
+        if not item.filename:
+            item.filename = generate_filename(item.title, item.playlist_index, item.video_id)
+        else:
+            item.filename = sanitize_filename(item.filename, fallback_id=f"{item.playlist_index:03d}_{item.video_id}")
+
         final_file_path = dest_dir / item.filename
 
         # 1. Existing file policy check
@@ -57,6 +68,11 @@ class DownloadWorker:
                 if status_update_cb:
                     status_update_cb(item)
                 return True
+            elif existing_file_policy == ExistingFilePolicy.OVERWRITE:
+                try:
+                    final_file_path.unlink(missing_ok=True)
+                except Exception as e:
+                    logger.warning(f"Could not remove existing file prior to overwrite: {e}")
 
         # 2. Attempt download with retries
         item.status = DownloadStatus.DOWNLOADING
@@ -73,7 +89,11 @@ class DownloadWorker:
                 return False
 
             try:
-                success = self._execute_yt_dlp(item, final_file_path)
+                success = self._execute_yt_dlp(
+                    item,
+                    final_file_path,
+                    overwrite=(existing_file_policy == ExistingFilePolicy.OVERWRITE)
+                )
                 if success:
                     item.status = DownloadStatus.COMPLETED
                     item.progress.percentage = 100.0
@@ -93,11 +113,10 @@ class DownloadWorker:
                         status_update_cb(item)
                     return True
 
-                # yt-dlp may return normally even when no usable output file was
-                # produced. Treat that as a failed attempt; otherwise this loop
-                # retries forever without incrementing retry_count and the queue
-                # never advances to the next video.
-                raise RuntimeError("Download finished without producing an output file")
+                # yt-dlp finished but no output file was found: count it as a failed
+                # attempt. Previously retry_count never increased here, so the loop spun
+                # forever and the queue could never move on to the next video.
+                raise RuntimeError("Download finished but the output file was not found")
 
             except DownloadCancelledException:
                 logger.info(f"Download of '{item.title}' was cancelled mid-stream.")
@@ -107,6 +126,14 @@ class DownloadWorker:
                 return False
 
             except Exception as e:
+                # yt-dlp wraps exceptions raised inside progress hooks (DownloadError),
+                # so a user skip/cancel must be detected here too, not retried.
+                if self.cancel_event.is_set() or isinstance(getattr(e, "exc_info", (None, None))[1], DownloadCancelledException):
+                    logger.info(f"Download of '{item.title}' was cancelled by user.")
+                    item.status = DownloadStatus.CANCELLED
+                    if status_update_cb:
+                        status_update_cb(item)
+                    return False
                 item.retry_count += 1
                 err_msg = str(e)
                 logger.error(f"Error downloading {item.title} (attempt {item.retry_count}/{item.max_retries}): {err_msg}")
@@ -136,9 +163,10 @@ class DownloadWorker:
             status_update_cb(item)
         return False
 
-    def _execute_yt_dlp(self, item: QueueItem, final_file_path: Path) -> bool:
+    def _execute_yt_dlp(self, item: QueueItem, final_file_path: Path, overwrite: bool = False) -> bool:
         """Internal yt-dlp execution with hooks."""
-        outtmpl = str(final_file_path.with_suffix(".%(ext)s"))
+        safe_stem = final_file_path.stem.replace("%", "%%")
+        outtmpl = str(final_file_path.parent / f"{safe_stem}.%(ext)s")
         format_spec = youtube_service.get_yt_dlp_format_selector(item.quality)
 
         def progress_hook(d: Dict[str, Any]):
@@ -185,19 +213,30 @@ class DownloadWorker:
             "quiet": True,
             "no_warnings": True,
             "ignoreerrors": False,
-            "continuedl": True,  # Support resuming interrupted downloads
+            "continuedl": not overwrite,  # Disable resume if overwriting
+            "overwrites": overwrite,
+            # Bound stalled network reads so cancellation/skip can progress even when
+            # yt-dlp has not emitted a progress hook for a while.
+            "socket_timeout": 15,
+            "retries": 3,
+            "fragment_retries": 3,
+            "file_access_retries": 2,
             "merge_output_format": "mp4",
         }
 
-        if FFMPEG_PATH:
-            ydl_opts["ffmpeg_location"] = FFMPEG_PATH
+        ffmpeg_bin = ffmpeg_service.ffmpeg_path or FFMPEG_PATH
+        if ffmpeg_bin:
+            ydl_opts["ffmpeg_location"] = str(ffmpeg_bin)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([item.url])
 
-        # Verify output file exists
-        if final_file_path.exists() and final_file_path.stat().st_size > 0:
+        # Verify output file exists and has settled as a non-empty regular file.
+        # yt-dlp's "finished" hook means the media stream finished, not necessarily
+        # that post-processing/merging and final rename have completed.
+        if final_file_path.is_file() and final_file_path.stat().st_size > 0:
             size = final_file_path.stat().st_size
+            item.filename = final_file_path.name
             item.progress.bytes_downloaded = size
             item.progress.total_bytes = size
             item.progress.percentage = 100.0
@@ -206,22 +245,28 @@ class DownloadWorker:
         # Check if yt-dlp saved it with a slightly different extension without using Path.glob
         # (avoiding bracket regex bugs like [Official Video])
         parent_dir = final_file_path.parent
+        target_stem = final_file_path.stem.lower()
         candidates = [
             f for f in parent_dir.iterdir()
-            if f.is_file() and f.stem == final_file_path.stem and not f.name.endswith(".part") and not f.name.endswith(".ytdl")
+            if f.is_file() and f.stem.lower() == target_stem and f.stat().st_size > 0
+            and not f.name.endswith((".part", ".ytdl", ".temp"))
         ]
         if candidates:
             # Rename or use first valid candidate
+            # Prefer the expected container extension, then the largest valid
+            # candidate (avoids accidentally selecting a tiny sidecar/thumbnail).
+            candidates.sort(key=lambda f: (f.suffix.lower() == final_file_path.suffix.lower(), f.stat().st_size), reverse=True)
             matched = candidates[0]
             if matched.suffix.lower() != ".mp4" and ffmpeg_service.is_available():
-                # Remux to mp4
-                ffmpeg_service.merge_video_audio(matched, matched, final_file_path)
-                if final_file_path.exists():
+                # Remux to mp4 via dedicated FFmpeg remuxer
+                remux_res = ffmpeg_service.remux_to_mp4(matched, final_file_path)
+                if remux_res.get("success") and final_file_path.exists():
                     try:
-                        matched.unlink()
+                        matched.unlink(missing_ok=True)
                     except Exception:
                         pass
                     size = final_file_path.stat().st_size
+                    item.filename = final_file_path.name
                     item.progress.bytes_downloaded = size
                     item.progress.total_bytes = size
                     item.progress.percentage = 100.0

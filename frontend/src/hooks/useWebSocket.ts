@@ -13,6 +13,8 @@ export interface WebSocketMessage {
     speed_mbps: number;
     eta_seconds: number;
   };
+  overall_status?: string;
+  queue_items?: import('../services/types').QueueItemState[];
   queue_summary?: {
     total_requested: number;
     completed: number;
@@ -43,6 +45,12 @@ export function useWebSocket(onMessageReceived?: (msg: WebSocketMessage) => void
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | undefined>(undefined);
+  const unmountedRef = useRef(false);
+  // Keep latest callback in a ref so a new callback doesn't tear down the socket
+  const onMessageRef = useRef(onMessageReceived);
+  useEffect(() => {
+    onMessageRef.current = onMessageReceived;
+  }, [onMessageReceived]);
 
   const connect = useCallback(() => {
     try {
@@ -60,9 +68,7 @@ export function useWebSocket(onMessageReceived?: (msg: WebSocketMessage) => void
       ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
-          if (onMessageReceived) {
-            onMessageReceived(parsed);
-          }
+          onMessageRef.current?.(parsed);
         } catch {
           // Non-JSON message (e.g. pong)
         }
@@ -70,6 +76,7 @@ export function useWebSocket(onMessageReceived?: (msg: WebSocketMessage) => void
 
       ws.onclose = () => {
         setIsConnected(false);
+        if (unmountedRef.current) return; // don't reconnect after unmount
         // Attempt reconnect after 3 seconds
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();
@@ -82,11 +89,13 @@ export function useWebSocket(onMessageReceived?: (msg: WebSocketMessage) => void
     } catch {
       setIsConnected(false);
     }
-  }, [onMessageReceived]);
+  }, []);
 
   useEffect(() => {
+    unmountedRef.current = false;
     connect();
     return () => {
+      unmountedRef.current = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }

@@ -99,5 +99,70 @@ class FFmpegService:
             "output_path": str(output_path)
         }
 
+    def remux_to_mp4(
+        self,
+        input_path: Path,
+        output_path: Path,
+        timeout_seconds: int = 300
+    ) -> Dict[str, Any]:
+        """
+        Remuxes/converts any media file into an MP4 container.
+        Attempts fast stream copy (-c:v copy -c:a aac) first, falling back to
+        transcoding if the video codec is incompatible with the MP4 container.
+        """
+        if not self.is_available():
+            return {
+                "success": False,
+                "error": "FFmpeg is not installed or not in PATH.",
+                "output_path": None
+            }
+
+        if not input_path.exists():
+            return {
+                "success": False,
+                "error": f"Input media file does not exist: {input_path}",
+                "output_path": None
+            }
+
+        cmd_fast = [
+            self.ffmpeg_path,
+            "-y",
+            "-i", str(input_path),
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-strict", "-2",
+            str(output_path)
+        ]
+        logger.info(f"Remuxing to MP4: {input_path.name} -> {output_path.name}")
+        rc, stdout, stderr = run_command_safe(cmd_fast, timeout_seconds=timeout_seconds)
+
+        if rc != 0 or not output_path.exists():
+            logger.warning(f"Fast copy remux failed, retrying with transcoding: {stderr}")
+            cmd_transcode = [
+                self.ffmpeg_path,
+                "-y",
+                "-i", str(input_path),
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-c:a", "aac",
+                str(output_path)
+            ]
+            rc, stdout, stderr = run_command_safe(cmd_transcode, timeout_seconds=timeout_seconds)
+
+        if rc != 0 or not output_path.exists():
+            logger.error(f"FFmpeg remux to MP4 failed: {stderr}")
+            return {
+                "success": False,
+                "error": f"FFmpeg remux failed: {stderr[-500:] if stderr else 'Unknown error'}",
+                "output_path": None
+            }
+
+        logger.info(f"FFmpeg remux to MP4 completed successfully: {output_path}")
+        return {
+            "success": True,
+            "error": None,
+            "output_path": str(output_path)
+        }
+
 
 ffmpeg_service = FFmpegService()
